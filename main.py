@@ -4,7 +4,6 @@ import json
 import os
 from urllib import request, error
 
-
 class ModrinthClient:
 
     def __init__(self):
@@ -78,7 +77,12 @@ if args.directory:
 
 
 def get_existing_mods() -> list[dict]:
-    file_names = os.listdir(args.directory)
+    file_names = []
+
+    for file_name in os.listdir(args.directory):
+        if file_name.endswith(".jar") or file_name.endswith(".zip"):
+            file_names.append(file_name)
+
     return [
         {"id": file_name.split(".")[-2], "filename": file_name}
         for file_name in file_names
@@ -96,7 +100,7 @@ def get_latest_version(mod_id):
             mod_version
             for mod_version in mod_versions_data
             if args.version in mod_version["game_versions"]
-            and args.loader in mod_version["loaders"]
+            and (args.loader in mod_version["loaders"] or "minecraft" in mod_version["loaders"] or "iris" in mod_version["loaders"])
         ),
         None,
     )
@@ -124,6 +128,7 @@ def download_mod(mod_id, existing_mods=[]):
         if not file_to_download:
             print(f"Couldn't find a file to download for {mod_id}")
             return
+
         filename: str = file_to_download["filename"]
         filename_parts = filename.split(".")
         filename_parts.insert(-1, mod_id)
@@ -133,14 +138,26 @@ def download_mod(mod_id, existing_mods=[]):
             print(f"{filename_with_id} latest version already exists.")
             return
 
+        if args.loader in latest_mod["loaders"]:
+            path = "mods"
+        elif "minecraft" in latest_mod["loaders"]:
+            path = "resourcepacks"
+        elif "iris" in latest_mod["loaders"]:
+            path = "shaderpacks"
+        else:
+            path = ""
+
+        os.makedirs(f"{args.directory}/{path}", exist_ok=True)
+
         print(
             "UPDATING: " if existing_mod else "DOWNLOADING: ",
             file_to_download["filename"],
+            mod_id,
             latest_mod["loaders"],
             latest_mod["game_versions"],
         )
         modrinth_client.download_file(
-            file_to_download["url"], f"{args.directory}/{filename_with_id}"
+            file_to_download["url"], f"{args.directory}/{path}/{filename_with_id}"
         )
 
         if existing_mod:
@@ -155,13 +172,16 @@ def main():
     if not collection_details:
         print(f"Collection id={args.collection} not found")
         return
+    name: str = collection_details['name']
+    print(f"Collection: {name}")
     mods: str = collection_details["projects"]
-    print("Mods in collection: ", mods)
+    print(f"Mods in collection ({len(mods)}): ", mods)
     existing_mods = get_existing_mods()
 
     with ThreadPoolExecutor(max_workers=5) as executor:
         executor.map(download_mod, mods, [existing_mods] * len(mods))
 
+    print("Download complete!")
 
 if __name__ == "__main__":
     main()
